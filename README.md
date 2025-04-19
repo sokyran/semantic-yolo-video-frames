@@ -73,19 +73,19 @@ uv run main.py --video path/to/video.mp4
 Process a video with custom settings:
 
 ```bash
-python main.py --video data/my_video.mp4 --threshold 0.3 --object_threshold 0.4 --combined_weight 0.6
+uv run main.py --video data/my_video.mp4 --threshold 0.3 --object_threshold 0.4 --combined_weight 0.6
 ```
 
 Process a video with higher sampling rate (for long videos):
 
 ```bash
-python main.py --video data/long_video.mp4 --sample_rate 10
+uv run main.py --video data/long_video.mp4 --sample_rate 10
 ```
 
 Customize priority objects:
 
 ```bash
-python main.py --video data/wildlife.mp4 --priority_classes "dog,cat,bird,elephant"
+uv run main.py --video data/wildlife.mp4 --priority_classes "dog,cat,bird,elephant"
 ```
 
 ## Output
