@@ -4,9 +4,10 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 from transformers import CLIPProcessor, CLIPModel
+from ultralytics import YOLO
+from tqdm import tqdm
 import argparse
 import os
-from tqdm import tqdm
 
 import warnings
 
@@ -72,8 +73,8 @@ clip_processor = CLIPProcessor.from_pretrained(
     "openai/clip-vit-base-patch32", use_fast=False
 )
 
-print("Завантаження моделі YOLOv5...")
-yolo_model = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True)
+print("Завантаження моделі YOLOv11...")
+yolo_model = YOLO("yolo11s.pt")
 
 
 def extract_frames(video_path, sample_rate=1):
@@ -149,38 +150,68 @@ def detect_objects(frames):
     for frame in tqdm(frames):
         # Виявлення об'єктів на кадрі
         results = yolo_model(frame)
-        yolo_results.append(results)
+
+        # Додаємо результати до списку
+        yolo_results.append(
+            results[0] if isinstance(results, list) and len(results) > 0 else results
+        )
 
     return yolo_results
 
 
 def analyze_yolo_results(yolo_results):
+    """Аналіз результатів розпізнавання об'єктів YOLOv11 для кожного кадру"""
     frame_objects = []
 
     print("Аналіз результатів розпізнавання об'єктів...")
     for result in yolo_results:
-        results_df = result.pandas().xyxy[0]
-
+        # Результати YOLOv11 мають інший формат порівняно з YOLOv5
         detected_objects = {}
         total_confidence = 0
+        total_objects = 0
 
-        for _, row in results_df.iterrows():
-            obj_class = row["name"]
-            confidence = row["confidence"]
+        if result is not None:
+            # Перевірка наявності атрибуту boxes у результаті
+            if hasattr(result, "boxes") and result.boxes is not None:
+                try:
+                    # Отримання всіх класів і впевненостей з результату
+                    if hasattr(result.boxes, "cls") and hasattr(result.boxes, "conf"):
+                        # Отримуємо всі класи і впевненості відразу
+                        classes = result.boxes.cls
+                        confidences = result.boxes.conf
 
-            # Додавання або оновлення лічильника для цього класу
-            detected_objects[obj_class] = detected_objects.get(obj_class, 0) + 1
-            total_confidence += confidence
+                        # Кількість виявлених об'єктів
+                        total_objects = len(classes)
+
+                        # Обробка кожного виявленого об'єкта
+                        for i in range(total_objects):
+                            cls_idx = int(classes[i].item())
+                            obj_class = (
+                                result.names.get(cls_idx, f"class_{cls_idx}")
+                                if hasattr(result, "names")
+                                else f"class_{cls_idx}"
+                            )
+                            confidence = float(confidences[i].item())
+
+                            # Додавання або оновлення лічильника для цього класу
+                            detected_objects[obj_class] = (
+                                detected_objects.get(obj_class, 0) + 1
+                            )
+                            total_confidence += confidence
+                except Exception as e:
+                    print(f"Помилка при обробці результатів YOLOv11: {e}")
+                    print(f"Тип result: {type(result)}")
+                    if hasattr(result, "boxes"):
+                        print(f"Тип result.boxes: {type(result.boxes)}")
 
         # Обчислення середньої впевненості, якщо є об'єкти
-        avg_confidence = (
-            total_confidence / len(results_df) if len(results_df) > 0 else 0
-        )
+        avg_confidence = total_confidence / total_objects if total_objects > 0 else 0
 
+        # Збереження інформації про об'єкти на цьому кадрі
         frame_info = {
             "object_classes": set(detected_objects.keys()),
             "object_counts": detected_objects,
-            "total_objects": len(results_df),
+            "total_objects": total_objects,
             "avg_confidence": avg_confidence,
         }
 
@@ -371,27 +402,34 @@ def save_results(
         plt.figure(figsize=(12, 8))
         plt.imshow(keyframe)
         plt.title(
-            f"Ключовий кадр {i+1} (Індекс: {original_frame_idx}, Час: {minutes:02d}:{seconds:02d})"
+            f"Ключовий кадр {i + 1} (Індекс: {original_frame_idx}, Час: {minutes:02d}:{seconds:02d})"
         )
         plt.axis("off")
         plt.savefig(
-            os.path.join(output_dir, "keyframes", f"keyframe_{i+1}.jpg"),
+            os.path.join(output_dir, "keyframes", f"keyframe_{i + 1}.jpg"),
             bbox_inches="tight",
         )
         plt.close()
 
+        # Збереження кадру з результатами YOLOv11
         yolo_result = yolo_results[frame_idx]
-        yolo_result.render()  # Візуалізація результатів на зображенні
-        yolo_img = Image.fromarray(yolo_result.ims[0])
 
+        # Використання методу .plot() з бібліотеки ultralytics для відображення боксів
+        # Створюємо копію кадру для малювання
+        plot_img = frames[frame_idx].copy()
+
+        # Використовуємо вбудований метод plot для малювання результатів
+        annotated_img = yolo_result.plot(img=plot_img)
+
+        # Відображення зображення з боксами
         plt.figure(figsize=(12, 8))
-        plt.imshow(yolo_img)
+        plt.imshow(annotated_img)
         plt.title(
-            f"YOLOv5 на ключовому кадрі {i+1} (Індекс: {original_frame_idx}, Час: {minutes:02d}:{seconds:02d})"
+            f"YOLOv11 на ключовому кадрі {i + 1} (Індекс: {original_frame_idx}, Час: {minutes:02d}:{seconds:02d})"
         )
         plt.axis("off")
         plt.savefig(
-            os.path.join(output_dir, "yolo_frames", f"yolo_keyframe_{i+1}.jpg"),
+            os.path.join(output_dir, "yolo_frames", f"yolo_keyframe_{i + 1}.jpg"),
             bbox_inches="tight",
         )
         plt.close()
@@ -522,7 +560,7 @@ def save_results(
                 else 0
             )
 
-            f.write(f"Ключовий кадр {i+1}:\n")
+            f.write(f"Ключовий кадр {i + 1}:\n")
             f.write(f"  Індекс кадру: {original_frame_idx}\n")
             f.write(f"  Часова мітка: {minutes:02d}:{seconds:02d}\n")
             f.write(f"  Семантична оцінка: {semantic_score:.4f}\n")
@@ -530,27 +568,20 @@ def save_results(
             f.write(f"  Комбінована оцінка: {combined_score:.4f}\n")
 
             # Додавання інформації про виявлені об'єкти
-            yolo_result = yolo_results[frame_idx]
-            results_df = yolo_result.pandas().xyxy[0]
+            if frame_idx < len(frame_objects):
+                detected_objects = frame_objects[frame_idx]
 
-            if len(results_df) > 0:
-                # Групування об'єктів за класами для зручності
-                class_groups = {}
-                for _, row in results_df.iterrows():
-                    obj_class = row["name"]
-                    confidence = row["confidence"]
-                    if obj_class not in class_groups:
-                        class_groups[obj_class] = []
-                    class_groups[obj_class].append(confidence)
+                if len(detected_objects["object_classes"]) > 0:
+                    # Групування об'єктів за класами для зручності
+                    class_groups = detected_objects["object_counts"]
 
-                f.write("  Виявлені об'єкти:\n")
-                for obj_class, confidences in class_groups.items():
-                    is_priority = obj_class in args.priority_classes
-                    priority_mark = " (пріоритетний)" if is_priority else ""
-                    avg_conf = sum(confidences) / len(confidences)
-                    f.write(
-                        f"    - {obj_class}{priority_mark}: {len(confidences)} шт. (серед. впевненість: {avg_conf:.2f})\n"
-                    )
+                    f.write("  Виявлені об'єкти:\n")
+                    for obj_class, count in class_groups.items():
+                        is_priority = obj_class in args.priority_classes
+                        priority_mark = " (пріоритетний)" if is_priority else ""
+                        f.write(f"    - {obj_class}{priority_mark}: {count} шт.\n")
+                else:
+                    f.write("  Виявлені об'єкти: немає\n")
 
 
 def main():

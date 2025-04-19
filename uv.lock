@@ -1257,6 +1257,7 @@ dependencies = [
     { name = "torchvision" },
     { name = "tqdm" },
     { name = "transformers" },
+    { name = "ultralytics" },
     { name = "yolov5" },
 ]
 
@@ -1271,6 +1272,7 @@ requires-dist = [
     { name = "torchvision", specifier = ">=0.21.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", specifier = ">=4.51.3" },
+    { name = "ultralytics", specifier = ">=8.3.23" },
     { name = "yolov5", specifier = ">=7.0.13" },
 ]
 

@@ -11,4 +11,4 @@ wheels/
 
 data/
 output/
-yolov5s.pt
+yolo*.pt
